@@ -1,0 +1,14 @@
+[project]
+name = "stdedit"
+version = "0.1.0"
+description = "A zero-dependency terminal text editor. stdlib only."
+requires-python = ">=3.9"
+dependencies = []
+
+[tool.setuptools.packages.find]
+where = ["src"]
+
+[project.scripts]
+stdedit = "stdedit.main:main"
+yuki = "stdedit.main:main"
+carl = "stdedit.install:main"
