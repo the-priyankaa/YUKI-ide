@@ -12,14 +12,16 @@ Zero-dependency terminal text editor. Python stdlib only.
 ## Quick Start
 
 ```bash
-git clone https://github.com/the-priyankaa/Demogorgon-.git
+git clone https://github.com/the-priyankaa/YUKI-ide.git
+```
+```
+cd YUKI-ide
 ```
 ```
 cd core
 ```
 ```
 make install          # creates venv + symlinks to ~/.local/bin
-stdedit myfile.py     # or: yuki myfile.py
 ```
 
 Run without installing:
