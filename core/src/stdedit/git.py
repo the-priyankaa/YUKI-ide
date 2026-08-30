@@ -11,10 +11,17 @@ import tempfile
 import os
 from typing import Optional
 
-_TIMEOUT = 2  # seconds
+_TIMEOUT = 2  # seconds, for local/offline commands (status, diff, branch, ...)
+_NETWORK_TIMEOUT = 20  # seconds, for commands that may hit a remote (push/pull/fetch)
+
+# GIT_TERMINAL_PROMPT=0 makes git fail fast with a clear stderr message
+# instead of hanging forever waiting for a username/password on a TTY
+# that doesn't exist in this UI.
+_NETWORK_ENV = dict(os.environ, GIT_TERMINAL_PROMPT="0")
 
 
-def _run(args: list[str], cwd: str | None = None) -> subprocess.CompletedProcess | None:
+def _run(args: list[str], cwd: str | None = None,
+         timeout: int = _TIMEOUT, env: dict | None = None) -> subprocess.CompletedProcess | None:
     """Run a git command with a timeout.  Returns None on any failure."""
     try:
         return subprocess.run(
@@ -22,10 +29,92 @@ def _run(args: list[str], cwd: str | None = None) -> subprocess.CompletedProcess
             cwd=cwd,
             capture_output=True,
             text=True,
-            timeout=_TIMEOUT,
+            timeout=timeout,
+            env=env,
         )
-    except (FileNotFoundError, subprocess.TimeoutExpired, OSError):
+    except (FileNotFoundError, OSError):
         return None
+    except subprocess.TimeoutExpired:
+        return None
+
+
+def _run_network(args: list[str], cwd: str | None = None) -> tuple[bool, str]:
+    """Run a git command that may touch the network (push/pull/fetch).
+
+    Returns ``(ok, message)``.  Combines stdout+stderr (git splits its
+    output between the two inconsistently — e.g. merge-conflict text
+    lands on stdout while the fetch summary lands on stderr) and turns
+    a small set of well-known failure patterns into a plain-language
+    message a non-git-expert can act on, falling back to git's raw
+    text otherwise.
+    """
+    try:
+        r = subprocess.run(
+            ["git"] + args,
+            cwd=cwd,
+            capture_output=True,
+            text=True,
+            timeout=_NETWORK_TIMEOUT,
+            env=_NETWORK_ENV,
+        )
+    except FileNotFoundError:
+        return False, "git is not installed or not on PATH"
+    except subprocess.TimeoutExpired:
+        return False, ("Timed out talking to the remote (>{}s). Check your "
+                        "network connection.".format(_NETWORK_TIMEOUT))
+    except OSError as e:
+        return False, f"Could not run git: {e}"
+
+    ok = r.returncode == 0
+    raw = (r.stdout + r.stderr).strip()
+    if ok:
+        return True, raw
+    return False, _friendly_git_error(raw)
+
+
+def _friendly_git_error(raw: str) -> str:
+    """Translate common git failure output into a short, plain message.
+
+    Falls back to the first non-empty line of *raw* when nothing
+    recognisable matches, so nothing is ever silently swallowed.
+    """
+    low = raw.lower()
+
+    auth_markers = (
+        "could not read username",
+        "could not read password",
+        "authentication failed",
+        "permission denied (publickey)",
+        "invalid username or password",
+        "terminal prompts disabled",
+        "403",
+        "fatal: unable to access",
+    )
+    if any(m in low for m in auth_markers):
+        return ("Not authenticated with the remote — log in / check your "
+                "git credentials first.\n" + raw)
+
+    if "conflict" in low or "automatic merge failed" in low:
+        return ("Merge conflict — resolve the conflicts in the affected "
+                 "file(s), then stage and commit.\n" + raw)
+
+    if "[rejected]" in low and ("fetch first" in low or "non-fast-forward" in low):
+        return ("Rejected: the remote has commits you don't have locally — "
+                 "pull (or fetch + merge/rebase) before pushing again.\n" + raw)
+
+    if "could not resolve host" in low or "network is unreachable" in low or \
+       "connection timed out" in low or "could not connect to server" in low:
+        return "Couldn't reach the remote — check your network connection.\n" + raw
+
+    if "no configured push destination" in low or "no upstream branch" in low:
+        return ("No upstream branch set for the current branch — publish "
+                 "it first (push with 'set upstream').\n" + raw)
+
+    if "repository not found" in low or "does not appear to be a git repository" in low:
+        return "Remote repository not found — check the remote URL.\n" + raw
+
+    first_line = next((l for l in raw.splitlines() if l.strip()), raw)
+    return first_line or "Unknown git error"
 
 
 def is_git_repo(path: str) -> bool:
@@ -223,12 +312,7 @@ def push(path: str, force_with_lease: bool = False, set_upstream: bool = False) 
         args.append("--force-with-lease")
     if set_upstream:
         args.extend(["-u", "origin"])
-    r = _run(args, cwd=path)
-    if r is None:
-        return False, "git not available"
-    ok = r.returncode == 0
-    output = r.stdout.strip() if ok else r.stderr.strip()
-    return ok, output
+    return _run_network(args, cwd=path)
 
 
 def pull(path: str, rebase: bool = False, ff_only: bool = False) -> tuple[bool, str]:
@@ -238,12 +322,7 @@ def pull(path: str, rebase: bool = False, ff_only: bool = False) -> tuple[bool, 
         args.append("--rebase")
     if ff_only:
         args.append("--ff-only")
-    r = _run(args, cwd=path)
-    if r is None:
-        return False, "git not available"
-    ok = r.returncode == 0
-    output = r.stdout.strip() if ok else r.stderr.strip()
-    return ok, output
+    return _run_network(args, cwd=path)
 
 
 # ------------------------------------------------------------------ #
@@ -333,12 +412,7 @@ def publish_branch(path: str, branch_name: str | None = None) -> tuple[bool, str
     branch = branch_name or current
     if not branch:
         return False, "No branch to publish"
-    r = _run(["push", "-u", "origin", branch], cwd=path)
-    if r is None:
-        return False, "git not available"
-    ok = r.returncode == 0
-    output = r.stdout.strip() if ok else r.stderr.strip()
-    return ok, output
+    return _run_network(["push", "-u", "origin", branch], cwd=path)
 
 
 def fetch_all(path: str, prune: bool = True) -> tuple[bool, str]:
@@ -346,12 +420,7 @@ def fetch_all(path: str, prune: bool = True) -> tuple[bool, str]:
     args = ["fetch", "--all"]
     if prune:
         args.append("--prune")
-    r = _run(args, cwd=path)
-    if r is None:
-        return False, "git not available"
-    ok = r.returncode == 0
-    output = r.stdout.strip() if ok else r.stderr.strip()
-    return ok, output
+    return _run_network(args, cwd=path)
 
 
 def get_remote_branches(path: str) -> list[str]:

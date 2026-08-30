@@ -47,6 +47,7 @@ class GitPanel:
         self.branches: list[str] = []
         self.branch_idx: int = 0
         self.last_result: str = ""
+        self.last_result_detail: str = ""  # full (possibly multi-line) message behind last_result
         # Issues / PRs
         self.issues: list[github_api.GitHubIssue] = []
         self.prs: list[github_api.GitHubPR] = []
@@ -191,14 +192,29 @@ class GitPanel:
 
     # -- push / pull ------------------------------------------------ #
 
+    @staticmethod
+    def _summarize(prefix: str, out: str) -> str:
+        """Compact a (possibly multi-line) git message to one status-bar line.
+
+        ``out`` may be a friendly message followed by the raw git text on
+        subsequent lines (see ``git._friendly_git_error``); only the first
+        line is shown in the single-line status bar, while the full text
+        is kept on ``last_result_detail`` for anything that wants to show
+        more (e.g. a future error/log panel).
+        """
+        first = next((l for l in out.splitlines() if l.strip()), out)
+        return f"{prefix}: {first}" if prefix else first
+
     def do_push(self) -> str:
         ok, out = git.push(self.root_dir)
-        self.last_result = "Pushed" if ok else f"Push: {out}"
+        self.last_result_detail = out
+        self.last_result = "Pushed" if ok else self._summarize("Push", out)
         return self.last_result
 
     def do_pull(self) -> str:
         ok, out = git.pull(self.root_dir)
-        self.last_result = "Pulled" if ok else f"Pull: {out}"
+        self.last_result_detail = out
+        self.last_result = "Pulled" if ok else self._summarize("Pull", out)
         self.refresh()
         return self.last_result
 
@@ -535,26 +551,28 @@ class GitPanel:
     def execute_remote_op(self) -> str:
         action = self.remote_action_labels[self.remote_idx]
         action_id = action[1]
+        out = ""
         if action_id == "pull":
             ok, out = git.pull(self.root_dir)
-            self.last_result = "Pulled" if ok else f"Pull failed: {out}"
+            self.last_result = "Pulled" if ok else self._summarize("Pull failed", out)
         elif action_id == "pull_rebase":
             ok, out = git.pull(self.root_dir, rebase=True)
-            self.last_result = "Pulled (rebase)" if ok else f"Pull (rebase) failed: {out}"
+            self.last_result = "Pulled (rebase)" if ok else self._summarize("Pull (rebase) failed", out)
         elif action_id == "pull_ff":
             ok, out = git.pull(self.root_dir, ff_only=True)
-            self.last_result = "Pulled (ff-only)" if ok else f"Pull (ff-only) failed: {out}"
+            self.last_result = "Pulled (ff-only)" if ok else self._summarize("Pull (ff-only) failed", out)
         elif action_id == "push":
             ok, out = git.push(self.root_dir)
-            self.last_result = "Pushed" if ok else f"Push failed: {out}"
+            self.last_result = "Pushed" if ok else self._summarize("Push failed", out)
         elif action_id == "push_fl":
             ok, out = git.push(self.root_dir, force_with_lease=True)
-            self.last_result = "Pushed (--force-with-lease)" if ok else f"Push (--force-with-lease) failed: {out}"
+            self.last_result = "Pushed (--force-with-lease)" if ok else self._summarize("Push (--force-with-lease) failed", out)
         elif action_id == "fetch":
             ok, out = git.fetch_all(self.root_dir)
-            self.last_result = "Fetched all" if ok else f"Fetch failed: {out}"
+            self.last_result = "Fetched all" if ok else self._summarize("Fetch failed", out)
         else:
             self.last_result = "Unknown action"
+        self.last_result_detail = out
         self.refresh()
         return self.last_result
 

@@ -419,8 +419,8 @@ class TestGitUnavailable(unittest.TestCase):
         self.assertEqual(get_staged_diff(self._d), "")
 
     def test_push_pull_report_git_unavailable(self):
-        self.assertEqual(push(self._d), (False, "git not available"))
-        self.assertEqual(pull(self._d), (False, "git not available"))
+        self.assertEqual(push(self._d), (False, "git is not installed or not on PATH"))
+        self.assertEqual(pull(self._d), (False, "git is not installed or not on PATH"))
 
     def test_mutating_calls_return_false(self):
         self.assertFalse(stage_file(self._d, "a"))
