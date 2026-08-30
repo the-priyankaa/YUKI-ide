@@ -24,6 +24,12 @@ cd core
 make install          # creates venv + symlinks to ~/.local/bin
 ```
 
+Or do all of the above in one command (Linux/macOS/WSL):
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/the-priyankaa/YUKI-ide/main/install.sh | bash
+```
+
 Run without installing:
 
 ```bash
