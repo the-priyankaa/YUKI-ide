@@ -257,7 +257,10 @@ def draw(stdscr, picker: NewFilePicker, height: int, width: int) -> None:
     """Paint the centered bordered New File overlay in one pass.
 
     Draws over whatever frame is already on screen (the dashboard); the TUI
-    refreshes once after this returns.
+    refreshes once after this returns. Uses a real curses window with
+    ``.box()`` for the frame instead of hand-built border strings: curses
+    guarantees the border and every interior row share the same width, so
+    there is no padding arithmetic left to get wrong.
     """
     inner_w = max(46, min(78, width * 72 // 100))
     inner_w = min(inner_w, width - 2)
@@ -266,56 +269,70 @@ def draw(stdscr, picker: NewFilePicker, height: int, width: int) -> None:
 
     # Title + input + hint + bottom hint rows + borders.
     box_h = view_h + 8
-    top = max(0, (height - box_h) // 2)
-    left = max(0, (width - inner_w) // 2)
+    win_h = min(box_h, height)
+    win_w = min(inner_w + 2, width)
+    top = max(0, (height - win_h) // 2)
+    left = max(0, (width - win_w) // 2)
+
+    try:
+        win = stdscr.derwin(win_h, win_w, top, left)
+    except curses.error:
+        return
+    win.erase()
+    win.box()  # draws all four sides + corners at consistent width
+
+    content_w = max(0, win_w - 2)  # columns available between the two side borders
 
     def put(row, col, text, attr=0):
         try:
-            stdscr.addstr(row, col, safe_render(text)[: max(0, width - col)], attr)
+            win.addstr(row, col, safe_render(text)[: max(0, content_w - col + 1)], attr)
         except (curses.error, ValueError, UnicodeEncodeError):
             pass
 
-    def row_fill(row, text, attr=0):
-        put(row, left, "\u2502" + (text + " " * inner_w)[:inner_w] + "\u2502", attr)
+    def row_text(row, text, attr=0):
+        put(row, 1, (text + " " * content_w)[:content_w], attr)
 
     path = picker.cwd
     if not path.endswith(os.sep):
         path += os.sep
     shown_path = path
-    if len(shown_path) > inner_w - 6:
-        shown_path = "..." + shown_path[-(inner_w - 9):]
+    if len(shown_path) > content_w - 4:
+        shown_path = "..." + shown_path[-(content_w - 7):]
 
-    put(top, left, "\u250c" + " NEW FILE ".center(inner_w - 2)[:inner_w - 2] + "\u2510",
-        curses.A_REVERSE)
-    row_fill(top + 1, f" Directory: {shown_path}", curses.A_DIM)
+    title = " NEW FILE "
+    put(0, max(1, (win_w - len(title)) // 2), title, curses.A_REVERSE)
+    row_text(1, f" Directory: {shown_path}", curses.A_DIM)
 
     filename_show = (picker.filename + "_") if picker.filename else "_"
-    put(top + 2, left, "\u2502 " + f"Name: {filename_show}"
-        + " " * max(0, inner_w - 2 - len(f"Name: {filename_show}"))
-        + "\u2502", curses.A_UNDERLINE)
-    sep = "\u251c" + "\u2500" * max(0, inner_w - 2) + "\u2524"
-    put(top + 3, left, sep, curses.A_DIM)
+    row_text(2, f" Name: {filename_show}", curses.A_UNDERLINE)
+
+    sep_row = 3
+    try:
+        win.hline(sep_row, 1, curses.ACS_HLINE, content_w)
+        win.addch(sep_row, 0, curses.ACS_LTEE)
+        win.addch(sep_row, win_w - 1, curses.ACS_RTEE)
+    except curses.error:
+        pass
 
     if picker.message:
-        row_fill(top + 4, " " + picker.message, curses.A_REVERSE | curses.A_BOLD)
-        list_top = top + 5
+        row_text(4, " " + picker.message, curses.A_REVERSE | curses.A_BOLD)
+        list_top = 5
     else:
-        list_top = top + 4
+        list_top = 4
     list_bottom = list_top + view_h
 
     indices = picker.visible_entries(view_h)
     if not indices:
-        row_fill(list_top, "  No accessible directories here", curses.A_DIM)
+        row_text(list_top, "  No accessible directories here", curses.A_DIM)
     else:
         for slot, idx in enumerate(indices):
             name = picker.entries[idx][0]
             sel = idx == picker.selected
             attr = curses.A_REVERSE if sel else 0
             display = ("\u25b6 " if sel else "   ") + name + "/"
-            row_fill(list_top + slot, display, attr)
+            row_text(list_top + slot, display, attr)
 
-    row_fill(list_bottom,
+    row_text(list_bottom,
              " \u2191/\u2193 select  Enter enter / create  Tab complete  "
              "Bksp parent  Esc back  Ctrl+1 YUKI", curses.A_DIM)
-    put(min(top + box_h - 1, height - 1), left,
-        "\u2514" + "\u2500" * max(0, inner_w - 2) + "\u2518", curses.A_DIM)
+    win.noutrefresh()

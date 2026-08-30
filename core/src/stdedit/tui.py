@@ -2297,6 +2297,12 @@ def _draw_help_overlay(stdscr, lines, offset=0):
 
     `offset` scrolls through `lines` when they exceed the terminal
     height; ▲/▼ corner markers signal hidden content above/below.
+
+    Uses a real curses sub-window + ``.box()`` (same technique as the
+    New File dialog fix) instead of hand-built border strings, so every
+    row is guaranteed to share the same width and the box always draws
+    as a true overlay on top of whatever is already on screen — nothing
+    outside the window's own rectangle is touched.
     """
     height, width = stdscr.getmaxyx()
     content_w = max([len(l) for l in lines] or [20])
@@ -2305,27 +2311,31 @@ def _draw_help_overlay(stdscr, lines, offset=0):
     body_h = len(lines)
     view_h = max(1, min(body_h, height - 2))
     box_h = view_h + 2
-    top = max(0, (height - box_h) // 2)
-    left = max(0, (width - inner_w) // 2)
+    win_h = min(box_h, height)
+    win_w = min(inner_w + 2, width)
+    top = max(0, (height - win_h) // 2)
+    left = max(0, (width - win_w) // 2)
 
-    def put(row, col, text, attr=0):
-        try:
-            stdscr.addstr(row, col, text[:width - col], attr)
-        except (curses.error, ValueError, UnicodeEncodeError):
-            pass
+    try:
+        win = stdscr.derwin(win_h, win_w, top, left)
+    except curses.error:
+        return
+    win.erase()
+    win.box()
+    content_w2 = max(0, win_w - 2)
 
     title = " stdedit help - q/Esc/Enter close \u00b7 arrows scroll "
-    max_title_w = inner_w - 2
-    if len(title) > max_title_w:
-        title = title[:max_title_w - 3] + "... "
-    fill = max(max_title_w - len(title), 0)
-    left_fill = fill // 2
-    right_fill = fill - left_fill
-    put(top, left, "\u250c" + "\u2500" * left_fill + title + "\u2500" *
-        right_fill + "\u2510", curses.A_REVERSE)
+    if len(title) > content_w2:
+        title = title[:max(0, content_w2 - 3)] + "... "
+    try:
+        win.addstr(0, max(1, (win_w - len(title)) // 2), title, curses.A_REVERSE)
+    except curses.error:
+        pass
+
     for i in range(view_h):
+        if 1 + i >= win_h - 1:
+            break
         text = lines[offset + i] if offset + i < body_h else ""
-        put(top + 1 + i, left, "\u2502" + " " * inner_w + "\u2502")
         stripped = text.rstrip()
         if stripped and all(c == "\u2550" for c in stripped):
             attr = curses.A_BOLD
@@ -2333,15 +2343,21 @@ def _draw_help_overlay(stdscr, lines, offset=0):
             attr = curses.A_BOLD
         else:
             attr = 0
-        put(top + 1 + i, left + 2, stripped, attr)
-    put(top + box_h - 1, left,
-        "\u2514" + "\u2500" * (inner_w - 2) + "\u2518")
-    # Scroll indicators: ▲ above, ▼ below.
-    if offset > 0:
-        put(top, left + inner_w - 1, "\u25b2", curses.A_REVERSE)
-    if offset + view_h < body_h:
-        put(top + box_h - 1, left + inner_w - 1, "\u25bc",
-            curses.A_REVERSE)
+        try:
+            win.addstr(1 + i, 1, (stripped + " " * content_w2)[:content_w2], attr)
+        except curses.error:
+            pass
+
+    # Scroll indicators: ▲ above, ▼ below — drawn on the border itself,
+    # at the window's own right edge, so they can never drift off the box.
+    try:
+        if offset > 0:
+            win.addstr(0, win_w - 2, "\u25b2", curses.A_REVERSE)
+        if offset + view_h < body_h:
+            win.addstr(win_h - 1, win_w - 2, "\u25bc", curses.A_REVERSE)
+    except curses.error:
+        pass
+    win.noutrefresh()
 
 
 # ------------------------------------------------------------------ #
@@ -2382,32 +2398,41 @@ def _draw_suggest_overlay(stdscr, sug, buf, left_offset, gutter_width,
     inner_w = max(26, min(40, max(0, width // 3)))
     cursor_row = buf.cursor_y - buf.scroll_y
     cursor_col = left_offset + gutter_width + (buf.cursor_x - buf.scroll_x)
-    box_h = show + 2
+    win_h = min(show + 2, height)
+    win_w = min(inner_w + 2, width)
     top = cursor_row + 1
-    if top + box_h > height - 1:
-        top = max(0, cursor_row - box_h)
-    left = min(max(0, cursor_col), max(0, width - inner_w - 1))
+    if top + win_h > height - 1:
+        top = max(0, cursor_row - win_h)
+    top = max(0, min(top, max(0, height - 1)))
+    left = min(max(0, cursor_col), max(0, width - win_w))
 
-    def put(row, col, text, attr=0):
+    try:
+        win = stdscr.derwin(min(win_h, max(1, height - top)), win_w, top, left)
+    except curses.error:
+        return
+    win.erase()
+    win.box()
+    content_w = max(0, win_w - 2)
+    actual_h = win.getmaxyx()[0]
+
+    def row_text(row, text, attr=0):
         try:
-            stdscr.addstr(row, col, _safe_render(text)[:width - col], attr)
+            win.addstr(row, 1, (_safe_render(text) + " " * content_w)[:content_w], attr)
         except (curses.error, ValueError, UnicodeEncodeError):
             pass
 
-    put(top, left, "\u250c" + "\u2500" * (inner_w - 1) + "\u2510", curses.A_REVERSE)
     for i, item in enumerate(items):
+        row = 1 + i
+        if row >= actual_h - 1:
+            break
         sel = (i == sug.selected)
         label = ("\u25b6 " if sel else "  ") + item
         attr = curses.A_REVERSE if sel else 0
-        put(top + 1 + i, left, (label + " " * inner_w)[:inner_w + 1], attr)
+        row_text(row, label, attr)
+
     hint = " Tab/Enter accept  Esc close "
-    pad = inner_w - 1 - len(hint)
-    if pad >= 0:
-        line = ("\u2514" + "\u2500" * max(0, pad // 2) + hint
-                + "\u2500" * (pad - pad // 2) + "\u2518")
-    else:
-        line = "\u2514" + hint[:max(0, inner_w - 1)] + "\u2518"
-    put(top + show + 1, left, line)
+    row_text(actual_h - 1, hint, curses.A_DIM)
+    win.noutrefresh()
 
 
 def _draw_ghost(stdscr, buf, ghost, left_offset, gutter_width, text_width) -> None:
@@ -2548,21 +2573,26 @@ def _draw_recent_overlay(stdscr, picker: RecentPicker, height: int, width: int) 
     top = max(0, (height - box_h) // 2)
     left = max(0, (width - inner_w) // 2)
 
-    def put(row, col, text, attr=0):
+    win = stdscr.derwin(box_h, inner_w, top, left)
+    win.erase()
+    win.box()
+    content_w = inner_w - 2
+
+    def row_text(win_row, text, attr=0):
         try:
-            stdscr.addstr(row, col, _safe_render(text)[:width - col], attr)
-        except (curses.error, ValueError, UnicodeEncodeError):
+            win.addstr(win_row, 1, (text + " " * content_w)[:content_w], attr)
+        except curses.error:
             pass
 
-    put(top, left, "\u250c" + " RECENT FILES ".center(inner_w - 2)[:inner_w - 2]
-        + "\u2510", curses.A_REVERSE)
-    put(top + 1, left, "\u2502", curses.A_DIM)
-    put(top + 1, left + 1, f" {len(items)} recent file(s) "
-        + " " * max(0, inner_w - 2 - len(f" {len(items)} recent file(s) ")),
-        curses.A_DIM)
-    put(top + 1, left + inner_w - 1, "\u2502", curses.A_DIM)
-    sep = "\u251c" + "\u2500" * max(0, inner_w - 2) + "\u2524"
-    put(top + 2, left, sep, curses.A_DIM)
+    row_text(0, " RECENT FILES ", curses.A_REVERSE)
+    row_text(1, f" {len(items)} recent file(s) ", curses.A_DIM)
+    win.hline(2, 1, ord("\u2500"), content_w)
+    try:
+        win.addch(2, 0, ord("\u251c"))
+        win.addch(2, inner_w - 1, ord("\u2524"))
+    except curses.error:
+        pass
+
     offset = 0
     if items:
         offset = min(max(picker.selected - (view_h - 1), 0),
@@ -2575,15 +2605,11 @@ def _draw_recent_overlay(stdscr, picker: RecentPicker, height: int, width: int) 
         else:
             text = "No recent files" if not items else ""
             attr = 0
-        put(top + 3 + i, left, "\u2502", curses.A_DIM)
-        put(top + 3 + i, left + 1,
-            " " + text[:inner_w - 3]
-            + " " * max(0, inner_w - 3 - min(len(text), inner_w - 3)), attr)
-        put(top + 3 + i, left + inner_w - 1, "\u2502", curses.A_DIM)
-    bottom = top + box_h - 1
-    put(top + 3 + view_h, left + 1,
-        " \u2191/\u2193 select \u2192 Enter open \u2192 Esc back", curses.A_DIM)
-    put(bottom, left, "\u2514" + "\u2500" * max(0, inner_w - 2) + "\u2518", curses.A_DIM)
+        row_text(3 + i, " " + text, attr)
+    row_text(3 + view_h,
+             " \u2191/\u2193 select \u2192 Enter open \u2192 Esc back",
+             curses.A_DIM)
+    win.noutrefresh()
 
 
 def _quick_open_geometry(qo: QuickOpen, height: int, width: int) -> tuple:
@@ -2648,25 +2674,36 @@ def _draw_quick_open_overlay(stdscr, qo: QuickOpen) -> None:
     # Title
     folder_mode = qo.mode == "folders"
     title = " Open Folder " if folder_mode else " Open File "
-    put(top, left, "\u250c" + title.center(inner_w - 2)[:inner_w - 2] + "\u2510",
-        curses.A_REVERSE)
+
+    win = stdscr.derwin(box_h, inner_w, top, left)
+    win.erase()
+    win.box()
+    content_w = inner_w - 2
+
+    def row_text(win_row, text, attr=0):
+        try:
+            win.addstr(win_row, 1, (text + " " * content_w)[:content_w], attr)
+        except curses.error:
+            pass
+
+    row_text(0, title, curses.A_REVERSE)
     # Input line: the vertical-bar caret comes immediately after the typed
     # text, inside the box (a bare `|` when the query is empty).
-    put(top + 1, left, "\u2502", curses.A_DIM)
     caret = qo.query + "|"
-    if len(caret) > inner_w - 2:
-        caret = caret[: inner_w - 2]
-    text = " " + caret
-    padding = max(0, inner_w - 2 - len(text))
-    put(top + 1, left + 1, text + " " * padding, curses.A_UNDERLINE)
-    put(top + 1, left + inner_w - 1, "\u2502", curses.A_DIM)
+    if len(caret) > content_w:
+        caret = caret[:content_w]
+    row_text(1, " " + caret, curses.A_UNDERLINE)
     # Separator
-    put(top + 2, left, "\u251c" + "\u2500" * (inner_w - 2) + "\u2524",
-        curses.A_DIM)
+    win.hline(2, 1, ord("\u2500"), content_w)
+    try:
+        win.addch(2, 0, ord("\u251c"))
+        win.addch(2, inner_w - 1, ord("\u2524"))
+    except curses.error:
+        pass
     # Items (or a status/hint message while there are no results)
     kind_raw = "folders" if folder_mode else "files"
     if not items:
-        row = top + 3
+        row = 3
         if qo.query:
             if qo.loading:
                 msg = f" Searching...  ({len(qo.files)} {kind_raw} indexed)"
@@ -2688,12 +2725,12 @@ def _draw_quick_open_overlay(stdscr, qo: QuickOpen) -> None:
                     msg = " Press Enter to open this folder as project root"
                 else:
                     msg = " No matches"
-            put(row, left + 1, msg, curses.A_DIM)
+            row_text(row, msg, curses.A_DIM)
         else:
             empty_hint = (f" Type to search {kind_raw}..." if folder_mode
                           else f" Recent {kind_raw}" if qo.show_recent_on_empty
                           else f" Type to search {kind_raw}...")
-            put(row, left + 1, empty_hint, curses.A_DIM)
+            row_text(row, empty_hint, curses.A_DIM)
     else:
         for i, (display_path, is_sel) in enumerate(items[:view_h]):
             # Show just the path relative to root if possible
@@ -2710,16 +2747,11 @@ def _draw_quick_open_overlay(stdscr, qo: QuickOpen) -> None:
                 short = "..." + short[-(avail - 3):]
             marker = "\u25b6 " if is_sel else "   "
             attr = curses.A_REVERSE if is_sel else 0
-            pad = max(0, inner_w - 2 - len(marker) - len(short))
-            put(top + 3 + i, left + 1,
-                (marker + short + " " * pad)[:inner_w - 2], attr)
+            row_text(3 + i, marker + short, attr)
     # Hint row
     hint = " \u2191/\u2193 select \u2192 Enter open \u2192 Esc back"
-    pad = max(0, inner_w - 2 - len(hint))
-    put(top + 3 + view_h, left + 1, hint + " " * pad, curses.A_DIM)
-    # Bottom border
-    put(top + box_h - 1, left,
-        "\u2514" + "\u2500" * (inner_w - 2) + "\u2518")
+    row_text(3 + view_h, hint, curses.A_DIM)
+    win.noutrefresh()
 
 
 def _draw_settings_overlay(stdscr, selected_idx: int, panel_width: int,
@@ -2942,29 +2974,46 @@ def _draw_quit_dialog(stdscr, title: str, body: list[str],
     inner_w = min(inner_w + 2, width - 3)
     if len(title) > inner_w - 2:
         title = title[:inner_w - 5] + "..."
-    box_h = len(body) + 4  # title, body, spacer, button-row, bottom
-    top = max(0, (height - box_h) // 2)
-    left = max(0, (width - inner_w) // 2 - 1)
+    win_h = min(len(body) + 4, height)  # title, body, spacer, button-row, bottom
+    win_w = min(inner_w + 2, width)
+    top = max(0, (height - win_h) // 2)
+    left = max(0, min((width - win_w) // 2 - 1, width - win_w))
 
-    def put(row, col, text, attr=0):
+    try:
+        win = stdscr.derwin(win_h, win_w, top, left)
+    except curses.error:
+        return
+    win.erase()
+    win.box()
+    content_w2 = max(0, win_w - 2)
+
+    def row_text(row, text, attr=0):
         try:
-            stdscr.addstr(row, col, _safe_render(text)[:width - col], attr)
+            win.addstr(row, 1, (_safe_render(text) + " " * content_w2)[:content_w2], attr)
         except (curses.error, ValueError, UnicodeEncodeError):
             pass
 
-    fill = max(inner_w - len(title) - 2, 0)
-    put(top, left, "\u250c" + title + "\u2500" * fill + "\u2510",
-        curses.A_REVERSE)
+    try:
+        win.addstr(0, 1, (" " + title + " ")[:content_w2], curses.A_REVERSE)
+    except curses.error:
+        pass
+
     for i, line in enumerate(body):
-        put(top + 1 + i, left,
-            "\u2502" + line.ljust(inner_w)[:inner_w] + "\u2502")
-    put(top + 1 + len(body), left, "\u2502" + " " * inner_w + "\u2502")
-    x = left + 1 + max(0, (inner_w - len(button_line)) // 2)
+        if 1 + i >= win_h - 1:
+            break
+        row_text(1 + i, line)
+
+    button_line_trunc = button_line[:content_w2]
+    x = 1 + max(0, (content_w2 - len(button_line_trunc)) // 2)
+    button_row = min(1 + len(body), win_h - 1)
     for i, label in enumerate(labels):
         attr = curses.A_REVERSE if i == selected else curses.A_BOLD
-        put(top + len(body) + 1, x, label, attr)
+        try:
+            win.addstr(button_row, x, label, attr)
+        except curses.error:
+            pass
         x += len(label) + 3
-    put(top + box_h - 1, left, "\u2514" + "\u2500" * inner_w + "\u2518")
+    win.noutrefresh()
 
 
 def _prompt_line(read_key, render, title: str = "Open file: ") -> Optional[str]:

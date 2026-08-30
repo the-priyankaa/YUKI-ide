@@ -71,42 +71,63 @@ EMPTY_STATE = "No extensions available at the moment"
 def draw(stdscr, view: ExtensionsView, height: int, width: int) -> None:
     """Paint the centered bordered Extensions overlay in one pass.
 
-    Draws over the frame already on screen (the dashboard); the TUI refreshes
-    once after this returns.
+    Uses a real curses sub-window + ``.box()`` (same technique as the New
+    File dialog fix) instead of hand-built border strings, so every row
+    is guaranteed to share the same width and the box draws as a true
+    overlay on top of the dashboard already on screen — nothing outside
+    the window's own rectangle is touched, and the TUI refreshes once
+    after this returns.
     """
     inner_w = max(46, min(78, width * 72 // 100))
     inner_w = min(inner_w, width - 2)
     n = len(view.entries)
     view_h = max(1, min(max(4, height - 10), max(1, n or 1)))
     box_h = view_h + 6
-    top = max(0, (height - box_h) // 2)
-    left = max(0, (width - inner_w) // 2)
+    win_h = min(box_h, height)
+    win_w = min(inner_w + 2, width)
+    top = max(0, (height - win_h) // 2)
+    left = max(0, (width - win_w) // 2)
+
+    try:
+        win = stdscr.derwin(win_h, win_w, top, left)
+    except curses.error:
+        return
+    win.erase()
+    win.box()
+
+    content_w = max(0, win_w - 2)
 
     def put(row, col, text, attr=0):
         try:
-            stdscr.addstr(row, col, safe_render(text)[: max(0, width - col)], attr)
+            win.addstr(row, col, safe_render(text)[: max(0, content_w - col + 1)], attr)
         except (curses.error, ValueError, UnicodeEncodeError):
             pass
 
-    def row_fill(row, text, attr=0):
-        put(row, left, "\u2502" + (text + " " * inner_w)[:inner_w] + "\u2502", attr)
+    def row_text(row, text, attr=0):
+        put(row, 1, (text + " " * content_w)[:content_w], attr)
 
-    put(top, left, "\u250c" + " EXTENSIONS ".center(inner_w - 2)[:inner_w - 2] + "\u2510",
-        curses.A_REVERSE)
+    title = " EXTENSIONS "
+    put(0, max(1, (win_w - len(title)) // 2), title, curses.A_REVERSE)
+
     dirs = extension_dirs(view.cwd)
     shown = ", ".join(str(d) for d in dirs) or "no search paths"
-    if len(shown) > inner_w - 8:
-        shown = "..." + shown[-(inner_w - 11):]
-    row_fill(top + 1, f" Search: {shown}", curses.A_DIM)
-    put(top + 2, left,
-        "\u251c" + "\u2500" * max(0, inner_w - 2) + "\u2524", curses.A_DIM)
+    if len(shown) > content_w - 8:
+        shown = "..." + shown[-(content_w - 11):]
+    row_text(1, f" Search: {shown}", curses.A_DIM)
+
+    sep_row = 2
+    try:
+        win.hline(sep_row, 1, curses.ACS_HLINE, content_w)
+        win.addch(sep_row, 0, curses.ACS_LTEE)
+        win.addch(sep_row, win_w - 1, curses.ACS_RTEE)
+    except curses.error:
+        pass
 
     if not view.entries:
-        row_fill(top + 3, " " + EMPTY_STATE, curses.A_DIM)
-        row_fill(top + 4, " Place .py files in an extension directory and reopen.",
+        row_text(3, " " + EMPTY_STATE, curses.A_DIM)
+        row_text(4, " Place .py files in an extension directory and reopen.",
                  curses.A_DIM)
-        row_fill(top + 5,
-                 " \u2191/\u2193 n/a  Esc back  Ctrl+1 YUKI", curses.A_DIM)
+        row_text(5, " \u2191/\u2193 n/a  Esc back  Ctrl+1 YUKI", curses.A_DIM)
     else:
         indices = view.visible_entries(view_h)
         for slot, idx in enumerate(indices):
@@ -114,12 +135,11 @@ def draw(stdscr, view: ExtensionsView, height: int, width: int) -> None:
             sel = idx == view.selected
             attr = curses.A_REVERSE if sel else 0
             short = path
-            if len(short) > inner_w - 10:
-                short = "..." + short[-(inner_w - 13):]
+            if len(short) > content_w - 10:
+                short = "..." + short[-(content_w - 13):]
             display = f"{'\u25b6 ' if sel else '   '}{stem:<20} {short}"
-            row_fill(top + 3 + slot, display, attr)
-        row_fill(top + 3 + view_h,
+            row_text(3 + slot, display, attr)
+        row_text(3 + view_h,
                  f" \u2191/\u2193 select  {len(view.entries)} discovered  "
                  "Esc back  Ctrl+1 YUKI", curses.A_DIM)
-    put(min(top + box_h - 1, height - 1), left,
-        "\u2514" + "\u2500" * max(0, inner_w - 2) + "\u2518", curses.A_DIM)
+    win.noutrefresh()
