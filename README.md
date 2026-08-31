@@ -15,20 +15,7 @@ Currently supported on **macOS** and **Linux**. Windows support will be added in
 
 ## Quick Start
 
-```bash
-git clone https://github.com/the-priyankaa/YUKI-ide.git
-```
-```
-cd YUKI-ide
-```
-```
-cd core
-```
-```
-make install          # creates venv + symlinks to ~/.local/bin
-```
-
-Or do all of the above in one command (Linux/macOS/WSL):
+(Linux/macOS/WSL):
 
 ```bash
 curl -fsSL https://raw.githubusercontent.com/the-priyankaa/YUKI-ide/main/install.sh | bash
