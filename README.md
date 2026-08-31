@@ -9,6 +9,10 @@ Zero-dependency terminal text editor. Python stdlib only.
 ![Tests](https://img.shields.io/badge/tests-788-passing)
 ![Version](https://img.shields.io/badge/version-0.1.0-orange)
 
+## Platform Support
+
+Currently supported on **macOS** and **Linux**. Windows support will be added in a further release.
+
 ## Quick Start
 
 ```bash
@@ -29,14 +33,6 @@ Or do all of the above in one command (Linux/macOS/WSL):
 ```bash
 curl -fsSL https://raw.githubusercontent.com/the-priyankaa/YUKI-ide/main/install.sh | bash
 ```
-
-**Windows** (PowerShell — clones the repo, creates a venv, and adds `stdedit` / `yuki` / `carl` to your PATH):
-
-```powershell
-irm https://raw.githubusercontent.com/the-priyankaa/YUKI-ide/main/install.ps1 | iex
-```
-
-> Run this from a PowerShell prompt, not Git Bash/MSYS/Cygwin — `install.sh` will detect those shells and point you here instead. Requires `git` and Python 3.9+ on PATH.
 
 Run without installing:
 
@@ -390,19 +386,7 @@ make deps-fix       # auto-install missing helpers via detected package manager
 
 `carl` supports: apt-get, dnf, yum, pacman, zypper, apk, brew.
 
-**Windows:** `carl` (the Python installer above) targets a Unix venv layout
-(`.venv/bin` + symlinks), which doesn't map onto Windows (`.venv\Scripts`,
-no unprivileged symlinks). Use `install.ps1` instead — it creates the same
-venv, installs the editor into it, and writes `.cmd` shims for `stdedit`,
-`yuki`, and `carl` into `%USERPROFILE%\.local\bin`, adding that folder to
-your User `PATH`:
-
-```powershell
-irm https://raw.githubusercontent.com/the-priyankaa/YUKI-ide/main/install.ps1 | iex
-```
-
-To uninstall on Windows, delete `%USERPROFILE%\.local\bin\{stdedit,yuki,carl}.cmd`
-and, optionally, the `.venv` folder under `YUKI-ide\core`.
+YUKI is currently supported on macOS and Linux. Windows support will be added in a further release.
 
 ## Configuration
 
