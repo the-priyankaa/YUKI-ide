@@ -21,11 +21,6 @@ Currently supported on **macOS** and **Linux**. Windows support will be added in
 curl -fsSL https://raw.githubusercontent.com/the-priyankaa/YUKI-ide/main/install.sh | bash
 ```
 
-Run without installing:
-
-```bash
-PYTHONPATH=src python3 -m stdedit.main myfile.py
-```
 
 ## Features
 
