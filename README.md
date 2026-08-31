@@ -76,9 +76,11 @@ PYTHONPATH=src python3 -m stdedit.main myfile.py
   frequency. Each language has its own keyword set (Python, JS, Go, C++,
   HTML tags, CSS properties, XML, …), so `.py`, `.js` and `.html` files
   suggest different keywords. `Tab` / `Enter` insert the highlighted
-  candidate, `Esc` dismisses, `^`/`v` move the selection. Select
-  **Auto-suggest** in Settings (`Ctrl-P`), on top of the default
-  **Suggestions: off**.
+candidate, `Esc` dismisses. The scroll wheel moves the selection while
+   the popup is open; the wheel scrolls the editor only when no popup is
+   shown. Select
+   **Auto-suggest** in Settings (`Ctrl-P`), on top of the default
+   **Suggestions: off**.
 - No popup or AI ghost is ever offered while the cursor is inside a
   double-quoted string (e.g. `name = "ja"` stays quiet), so string literal
   content never triggers suggestions.
@@ -138,7 +140,7 @@ Ctrl-R              replace all occurrences
 typing              while typing an identifier, matching keywords and
                     document identifiers appear in a popup below the cursor
                     (no popup appears inside double-quoted strings)
-^ / v               move popup selection (while the popup is open)
+scroll wheel        move popup selection (while the popup is open)
 Tab / Enter         insert the highlighted suggestion
 Esc                 dismiss the popup / inline ghost text
 ```
@@ -303,7 +305,8 @@ double-click        select word
 triple-click        select line
 drag                select text
 Shift+click         extend selection
-scroll wheel        scroll up / down
+scroll wheel        scroll up / down;
+                    while the suggest popup is open, move popup selection
 ```
 
 ### Terminal & Prompts

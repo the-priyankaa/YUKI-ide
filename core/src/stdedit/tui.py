@@ -1145,12 +1145,18 @@ def _main_loop(stdscr, buf: Buffer, language: str, status: str, selecting: bool,
 
             # --- Scroll wheel ---
             if bstate & curses.BUTTON4_PRESSED:
-                buf.move_cursor(dy=-3)
-                buf.update_scroll(text_height, text_width)
+                if sug.visible:
+                    sug.move(-1)  # wheel up → previous suggestion
+                else:
+                    buf.move_cursor(dy=-3)
+                    buf.update_scroll(text_height, text_width)
                 continue
             if bstate & curses.BUTTON5_PRESSED:
-                buf.move_cursor(dy=3)
-                buf.update_scroll(text_height, text_width)
+                if sug.visible:
+                    sug.move(1)  # wheel down → next suggestion
+                else:
+                    buf.move_cursor(dy=3)
+                    buf.update_scroll(text_height, text_width)
                 continue
 
             if bstate & curses.BUTTON1_PRESSED:
@@ -1707,14 +1713,6 @@ def _main_loop(stdscr, buf: Buffer, language: str, status: str, selecting: bool,
             continue
 
         if sug.visible:
-            if key in (curses.KEY_UP,):
-                sug.move(-1)
-                status = ""
-                continue
-            if key in (curses.KEY_DOWN,):
-                sug.move(1)
-                status = ""
-                continue
             if key in ("\t", "\n", "\r"):
                 suffix = sug.accept_suffix()
                 sug.close()
@@ -2207,7 +2205,8 @@ HELP_SECTIONS = [
         "triple-click        select line",
         "drag                select text",
         "Shift+click         extend selection",
-        "scroll wheel        scroll up / down",
+        "scroll wheel        scroll up / down (no popup)",
+        "                    move popup selection while the popup is open",
     ]),
     ("TERMINAL & PROMPTS", [
         "terminal paste      bracketed paste inserts multi-line text",
