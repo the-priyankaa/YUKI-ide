@@ -1,4 +1,4 @@
-# STDLIB.md — Third-Party → Standard Library Substitutions
+# STDLIB.md — Third-Party → Standard Library Substitutions ok
 
 `stdedit` is a terminal text editor built with **zero runtime dependencies**.
 Everything below is stdlib-only. This log exists so judges can verify the

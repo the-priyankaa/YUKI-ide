@@ -1,6 +1,6 @@
 #!/usr/bin/env bash
 # Proves stdedit imports nothing outside the standard library.
-# Run: bash scripts/deps-proof.sh   (writes deps-proof.txt)
+# Run: bash scripts/deps-proof.sh   (writes deps-proof.txt) ok
 set -euo pipefail
 
 OUT="deps-proof.txt"

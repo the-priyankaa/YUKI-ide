@@ -1,4 +1,4 @@
-"""Tiny Vim-style example extension.
+"""Tiny Vim-style example Extension.
 
 This is intentionally small: it demonstrates the extension API without
 replacing the core editor. Press Ctrl-B to toggle a Vim-like status message.

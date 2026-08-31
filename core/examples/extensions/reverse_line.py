@@ -1,4 +1,4 @@
-"""External extension example: Ctrl-R reverses the current line."""
+"""External extension example: Ctrl-R reverses the current Line."""
 
 
 def setup(api):

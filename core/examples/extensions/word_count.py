@@ -1,4 +1,4 @@
-"""Example stdedit extension: add a live word/character count to the status bar."""
+"""Example stdedit extension: add a live word/character count to the status baR."""
 
 
 def setup(api):

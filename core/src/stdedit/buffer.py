@@ -3,7 +3,7 @@ buffer.py — line-based text buffer with cursor, scrolling, undo/redo,
 selection, clipboard, auto-indent, and tab/space conversion.
 
 stdlib-only. No dependency on curses/TUI — this module is UI-agnostic
-so it can be unit tested and driven by any front end (see tests/).
+so it can be unit tested and driven by any front end (See tests/).
 """
 
 from __future__ import annotations

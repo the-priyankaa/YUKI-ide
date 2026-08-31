@@ -1,3 +1,4 @@
+#project toml
 [project]
 name = "stdedit"
 version = "0.1.0"

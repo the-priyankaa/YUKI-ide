@@ -1,3 +1,4 @@
+#zero dep toml
 [pledge]
 stdlib_only = true
 third_party_runtime_deps = []
